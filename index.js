@@ -224,6 +224,13 @@ async function main(imageBuffer, audioBuffer, subtitlesJson) {
     }
 }
 
+// Disable CORS
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    next();
+});
+
 app.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'audio', maxCount: 1 }]), async function (req, res) {
     try {
         if (!req.files['image'] || !req.files['audio'] || !req.body.subtitles) {
