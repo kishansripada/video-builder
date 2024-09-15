@@ -58,26 +58,17 @@ class VideoProcessor {
             ffmpeg(inputPath)
                 .setDuration(duration)
                 .output(outputPath)
-                .on('start', (commandLine) => {
-                    console.log('Spawned FFmpeg with command: ' + commandLine);
-                })
-                .on('progress', (progress) => {
-                    console.log('Processing: ' + progress.percent + '% done');
-                })
                 .on('end', () => {
                     console.log('Video trimmed successfully');
                     resolve(outputPath);
                 })
-                .on('error', (err, stdout, stderr) => {
+                .on('error', (err) => {
                     console.error('Error trimming video:', err);
-                    console.error('FFmpeg stdout:', stdout);
-                    console.error('FFmpeg stderr:', stderr);
                     reject(err);
                 })
                 .run();
         });
     }
-
 
     async removeAudio(inputPath) {
         const outputPath = await this.createTempFile('noaudio', null, '.mp4');
@@ -85,20 +76,12 @@ class VideoProcessor {
             ffmpeg(inputPath)
                 .noAudio()
                 .output(outputPath)
-                .on('start', (commandLine) => {
-                    console.log('Spawned FFmpeg with command: ' + commandLine);
-                })
-                .on('progress', (progress) => {
-                    console.log('Processing: ' + progress.percent + '% done');
-                })
                 .on('end', () => {
                     console.log('Audio removed successfully');
                     resolve(outputPath);
                 })
-                .on('error', (err, stdout, stderr) => {
+                .on('error', (err) => {
                     console.error('Error removing audio:', err);
-                    console.error('FFmpeg stdout:', stdout);
-                    console.error('FFmpeg stderr:', stderr);
                     reject(err);
                 })
                 .run();
@@ -123,26 +106,17 @@ class VideoProcessor {
                     }
                 ])
                 .output(outputPath)
-                .on('start', (commandLine) => {
-                    console.log('Spawned FFmpeg with command: ' + commandLine);
-                })
-                .on('progress', (progress) => {
-                    console.log('Processing: ' + progress.percent + '% done');
-                })
                 .on('end', () => {
                     console.log('Overlay applied successfully');
                     resolve(outputPath);
                 })
-                .on('error', (err, stdout, stderr) => {
+                .on('error', (err) => {
                     console.error('Error applying overlay:', err);
-                    console.error('FFmpeg stdout:', stdout);
-                    console.error('FFmpeg stderr:', stderr);
                     reject(err);
                 })
                 .run();
         });
     }
-
 
     async applyAudio(inputPath, vocalsAudioBuffer, outputPath) {
         const tempAudioPath = await this.createTempFile('vocals', vocalsAudioBuffer);
@@ -186,14 +160,9 @@ class VideoProcessor {
             const filterComplex = await this.generateFilterComplex(subtitlesFile);
             const ffmpegCommand = `ffmpeg -i "${inputPath}" -vf "${filterComplex}" -c:a copy "${outputPath}"`;
 
-            console.log('Executing FFmpeg command:', ffmpegCommand);
-
-            const { stdout, stderr } = await execAsync(ffmpegCommand);
+            const { stderr } = await execAsync(ffmpegCommand);
             if (stderr) {
                 console.error(`FFmpeg stderr: ${stderr}`);
-            }
-            if (stdout) {
-                console.log(`FFmpeg stdout: ${stdout}`);
             }
             console.log('Subtitles burned successfully!');
             return outputPath;
@@ -202,49 +171,35 @@ class VideoProcessor {
             throw error;
         }
     }
-
 }
+
 async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName, vocalsAudioBuffer, subtitlesFile = null, imageBuffer) {
     const processor = new VideoProcessor();
 
     try {
         const tempAudioPath = await processor.createTempFile('vocals', vocalsAudioBuffer, '.mp3');
         const duration = await processor.getAudioDuration(tempAudioPath);
-        console.log(`Vocals duration: ${duration} seconds`);
+        console.log(`Processing video with duration: ${duration} seconds`);
 
         const trimmedPath = await processor.trimVideo(inputPath, duration);
-        console.log(`Trimmed video path: ${trimmedPath}`);
-
         const noAudioPath = await processor.removeAudio(trimmedPath);
-        console.log(`No audio video path: ${noAudioPath}`);
 
         let withSubtitlesPath = noAudioPath;
         if (subtitlesFile) {
             withSubtitlesPath = await processor.burnSubtitles(noAudioPath, subtitlesFile);
-            console.log(`Video with subtitles path: ${withSubtitlesPath}`);
         }
 
-        console.log('Applying overlay...');
         const withOverlayPath = await processor.applyOverlay(withSubtitlesPath, imageBuffer);
-        console.log(`Video with overlay path: ${withOverlayPath}`);
-
-
-
         const finalOutputPath = await processor.applyAudio(withOverlayPath, vocalsAudioBuffer, outputPath);
-        console.log(`Final output video path: ${finalOutputPath}`);
 
         const supabase = createClient(
             "https://dxtxbxkkvoslcrsxbfai.supabase.co",
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4dHhieGtrdm9zbGNyc3hiZmFpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTY2MTQ2Mzc0NiwiZXhwIjoxOTc3MDM5NzQ2fQ.1Sbj1t90pvU2JveRQj0YvCGddbo5ojph-SBcPtGgNDo"
         );
 
-        // Read the file
         const fileBuffer = await fs.readFile(finalOutputPath);
-
-        // Generate a unique filename
         const filename = `video_${Date.now()}.mp4`;
 
-        // Upload to Supabase
         return await supabase.storage
             .from('videos')
             .upload(filename, fileBuffer, {
@@ -258,7 +213,6 @@ async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName,
         await processor.cleanup();
     }
 }
-
 
 const inputVideo = path.join(__dirname, 'background_video.mp4');
 const outputVideo = path.join(__dirname, 'output_with_overlay_audio_and_subs.mp4');
@@ -297,5 +251,4 @@ const PORT = process.env.PORT || 9000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
-
 // const URL_PREFIX = "https://dxtxbxkkvoslcrsxbfai.supabase.co/storage/v1/object/public/" + fullPath
