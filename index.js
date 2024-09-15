@@ -217,13 +217,13 @@ async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName,
         const filename = `video_${Date.now()}.mp4`;
 
         // Upload to Supabase
-        const { data, error } = await supabase.storage
+        return await supabase.storage
             .from('videos')
             .upload(filename, fileBuffer, {
                 contentType: 'video/mp4'
             });
 
-        console.log('Video processing completed successfully');
+
     } catch (error) {
         console.error('Video processing failed:', error);
         throw error;
@@ -255,7 +255,9 @@ app.get('/', async function (req, res) {
     res.write('Loading...');
 
     try {
-        await main();
+        const response = await main();
+        res.json(response)
+        console.log('Video processing completed successfully');
         res.write('<br>Done');
     } catch (error) {
         res.write('<br>Error occurred');
