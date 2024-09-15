@@ -4,13 +4,17 @@ const path = require('path');
 const os = require('os');
 const util = require('util');
 const { exec } = require('child_process');
-const { generateScreenshot } = require('./reddit-image-generator');
+// const { generateScreenshot } = require('./reddit-image-generator');
 const { createClient } = require("@supabase/supabase-js")
 const execAsync = util.promisify(exec);
 const ffmpegStatic = require('ffmpeg-static');
+const multer = require('multer');
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 
 const express = require('express')
+
 const app = express()
 
 ffmpeg.setFfmpegPath(ffmpegStatic);
@@ -182,7 +186,8 @@ class VideoProcessor {
         }
     }
 }
-async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName, dingAudioPath, vocalsAudioPath, subtitlesFile = null) {
+
+async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName, dingAudioPath, vocalsAudioPath, subtitlesFile = null, image) {
     const processor = new VideoProcessor();
 
     try {
@@ -198,19 +203,16 @@ async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName,
             await processor.burnSubtitles(noAudioPath, withSubtitlesPath, subtitlesFile);
         }
 
-        // Generate the screenshot buffer
-        const imageBuffer = await generateScreenshot(storyName, 75, 80);
-
-        const withOverlayPath = await processor.applyOverlay(withSubtitlesPath, imageBuffer);
+        // Use the passed-in image directly
+        const withOverlayPath = await processor.applyOverlay(withSubtitlesPath, image);
         const withAudioPath = await processor.applyAudio(withOverlayPath, dingAudioPath, vocalsAudioPath, outputPath);
-
 
         const supabase = createClient(
             "https://dxtxbxkkvoslcrsxbfai.supabase.co",
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4dHhieGtrdm9zbGNyc3hiZmFpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTY2MTQ2Mzc0NiwiZXhwIjoxOTc3MDM5NzQ2fQ.1Sbj1t90pvU2JveRQj0YvCGddbo5ojph-SBcPtGgNDo"
         );
-        // Read the file
 
+        // Read the file
         const fileBuffer = await fs.readFile(withAudioPath);
 
         // Generate a unique filename
@@ -223,7 +225,6 @@ async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName,
                 contentType: 'video/mp4'
             });
 
-
     } catch (error) {
         console.error('Video processing failed:', error);
         throw error;
@@ -231,6 +232,7 @@ async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName,
         await processor.cleanup();
     }
 }
+
 // Example usage
 const inputVideo = path.join(__dirname, 'background_video.mp4');
 const outputVideo = path.join(__dirname, 'output_with_overlay_audio_and_subs.mp4');
@@ -238,29 +240,33 @@ const dingAudioFile = path.join(__dirname, 'ding.mp3');
 const vocalsAudioFile = path.join(__dirname, 'stitched_audio.mp3');
 const subtitlesFile = path.join(__dirname, 'merged_timestamps.json');
 
-async function main() {
+async function main(image) {
     try {
-        await processVideoWithOverlayAndAudio(inputVideo, outputVideo, "ER doctors of reddit, what's the worse thing you've ever seen in an operating room?", dingAudioFile, vocalsAudioFile, subtitlesFile);
+        await processVideoWithOverlayAndAudio(inputVideo, outputVideo, "ER doctors of reddit, what's the worse thing you've ever seen in an operating room?", dingAudioFile, vocalsAudioFile, subtitlesFile, image);
     } catch (err) {
         console.error('Main process failed:', err);
     }
 }
 
-app.get('/', async function (req, res) {
+app.post('/', upload.single('image'), async function (req, res) {
     res.writeHead(200, {
         'Content-Type': 'text/html',
         'Transfer-Encoding': 'chunked'
     });
 
-    res.write('Loading...');
+    res.write('Processing image...');
 
     try {
-        const response = await main();
-        res.json(response)
-        console.log('Video processing completed successfully');
-        res.write('<br>Done');
+        // if (!req.file) {
+        //     throw new Error('No image file uploaded');
+        // }
+
+        const image = req.file.buffer;
+        const response = await main(image);
+        res.write('<br>Image processed successfully');
+        res.write('<br>Result: ' + JSON.stringify(response));
     } catch (error) {
-        res.write('<br>Error occurred');
+        res.write('<br>Error occurred: ' + error.message);
     }
 
     res.end();

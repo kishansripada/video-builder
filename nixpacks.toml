@@ -1,14 +1,2 @@
-[build]
-builder = "DOCKER"
-
-[build.docker]
-from = "mcr.microsoft.com/playwright:v1.37.0-jammy"
-
 [phases.setup]
-nixPkgs = ['nodejs_18', 'npm-9_x', 'ffmpeg']
-
-[phases.install]
-cmds = ['npm ci']
-
-[start]
-cmd = 'node index.js'
+nixPkgs = ["...", "ffmpeg"]
