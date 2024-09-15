@@ -7,9 +7,13 @@ const { exec } = require('child_process');
 const { generateScreenshot } = require('./reddit-image-generator');
 const { createClient } = require("@supabase/supabase-js")
 const execAsync = util.promisify(exec);
+const ffmpegStatic = require('ffmpeg-static');
+
+
 const express = require('express')
 const app = express()
 
+ffmpeg.setFfmpegPath(ffmpegStatic);
 
 
 class VideoProcessor {
