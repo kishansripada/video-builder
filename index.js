@@ -4,30 +4,28 @@ const path = require('path');
 const os = require('os');
 const util = require('util');
 const { exec } = require('child_process');
-// const { generateScreenshot } = require('./reddit-image-generator');
 const { createClient } = require("@supabase/supabase-js")
 const execAsync = util.promisify(exec);
 const ffmpegStatic = require('ffmpeg-static');
 const multer = require('multer');
+const express = require('express');
 
+const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
-
-const express = require('express')
-
-const app = express()
-
 ffmpeg.setFfmpegPath(ffmpegStatic);
-
 
 class VideoProcessor {
     constructor() {
         this.tempFiles = [];
     }
 
-    async createTempFile(prefix) {
-        const tempPath = path.join(os.tmpdir(), `${prefix}_${Date.now()}.mp4`);
+    async createTempFile(prefix, buffer = null, extension = '') {
+        const tempPath = path.join(os.tmpdir(), `${prefix}_${Date.now()}${extension}`);
         this.tempFiles.push(tempPath);
+        if (buffer) {
+            await fs.writeFile(tempPath, buffer);
+        }
         return tempPath;
     }
 
@@ -55,48 +53,61 @@ class VideoProcessor {
     }
 
     async trimVideo(inputPath, duration) {
-        const outputPath = await this.createTempFile('trimmed');
+        const outputPath = await this.createTempFile('trimmed', null, '.mp4');
         return new Promise((resolve, reject) => {
             ffmpeg(inputPath)
                 .setDuration(duration)
                 .output(outputPath)
+                .on('start', (commandLine) => {
+                    console.log('Spawned FFmpeg with command: ' + commandLine);
+                })
+                .on('progress', (progress) => {
+                    console.log('Processing: ' + progress.percent + '% done');
+                })
                 .on('end', () => {
-                    console.log('Video trimmed');
+                    console.log('Video trimmed successfully');
                     resolve(outputPath);
                 })
-                .on('error', (err) => {
+                .on('error', (err, stdout, stderr) => {
                     console.error('Error trimming video:', err);
+                    console.error('FFmpeg stdout:', stdout);
+                    console.error('FFmpeg stderr:', stderr);
                     reject(err);
                 })
                 .run();
         });
     }
 
+
     async removeAudio(inputPath) {
-        const outputPath = await this.createTempFile('noaudio');
+        const outputPath = await this.createTempFile('noaudio', null, '.mp4');
         return new Promise((resolve, reject) => {
             ffmpeg(inputPath)
                 .noAudio()
                 .output(outputPath)
+                .on('start', (commandLine) => {
+                    console.log('Spawned FFmpeg with command: ' + commandLine);
+                })
+                .on('progress', (progress) => {
+                    console.log('Processing: ' + progress.percent + '% done');
+                })
                 .on('end', () => {
-                    console.log('Audio removed');
+                    console.log('Audio removed successfully');
                     resolve(outputPath);
                 })
-                .on('error', (err) => {
+                .on('error', (err, stdout, stderr) => {
                     console.error('Error removing audio:', err);
+                    console.error('FFmpeg stdout:', stdout);
+                    console.error('FFmpeg stderr:', stderr);
                     reject(err);
                 })
                 .run();
         });
     }
 
-
     async applyOverlay(inputPath, imageBuffer) {
-        const outputPath = await this.createTempFile('withoverlay');
-        const tempImagePath = await this.createTempFile('overlay');
-
-        // Write the image buffer to a temporary file
-        await fs.writeFile(tempImagePath, imageBuffer);
+        const outputPath = await this.createTempFile('withoverlay', null, '.mp4');
+        const tempImagePath = await this.createTempFile('overlay', imageBuffer, '.png');
 
         return new Promise((resolve, reject) => {
             ffmpeg(inputPath)
@@ -112,32 +123,32 @@ class VideoProcessor {
                     }
                 ])
                 .output(outputPath)
+                .on('start', (commandLine) => {
+                    console.log('Spawned FFmpeg with command: ' + commandLine);
+                })
+                .on('progress', (progress) => {
+                    console.log('Processing: ' + progress.percent + '% done');
+                })
                 .on('end', () => {
-                    console.log('Overlay applied');
+                    console.log('Overlay applied successfully');
                     resolve(outputPath);
                 })
-                .on('error', (err) => {
+                .on('error', (err, stdout, stderr) => {
                     console.error('Error applying overlay:', err);
+                    console.error('FFmpeg stdout:', stdout);
+                    console.error('FFmpeg stderr:', stderr);
                     reject(err);
                 })
                 .run();
         });
     }
 
-    async applyAudio(inputPath, dingAudioPath, vocalsAudioPath, outputPath) {
+
+    async applyAudio(inputPath, vocalsAudioBuffer, outputPath) {
+        const tempAudioPath = await this.createTempFile('vocals', vocalsAudioBuffer);
         return new Promise((resolve, reject) => {
             ffmpeg(inputPath)
-                .input(dingAudioPath)
-                .input(vocalsAudioPath)
-                .complexFilter([
-                    {
-                        filter: 'amix',
-                        options: {
-                            inputs: 2,
-                            duration: 'longest'
-                        }
-                    }
-                ])
+                .input(tempAudioPath)
                 .output(outputPath)
                 .on('end', () => {
                     console.log('Audio applied');
@@ -169,14 +180,20 @@ class VideoProcessor {
         return subtitles.join(',');
     }
 
-    async burnSubtitles(inputPath, outputPath, subtitlesFile) {
+    async burnSubtitles(inputPath, subtitlesFile) {
         try {
+            const outputPath = await this.createTempFile('with_subtitles', null, '.mp4');
             const filterComplex = await this.generateFilterComplex(subtitlesFile);
-            const ffmpegCommand = `ffmpeg -i ${inputPath} -vf "${filterComplex}" -c:a copy ${outputPath}`;
+            const ffmpegCommand = `ffmpeg -i "${inputPath}" -vf "${filterComplex}" -c:a copy "${outputPath}"`;
 
-            const { stderr } = await execAsync(ffmpegCommand);
+            console.log('Executing FFmpeg command:', ffmpegCommand);
+
+            const { stdout, stderr } = await execAsync(ffmpegCommand);
             if (stderr) {
                 console.error(`FFmpeg stderr: ${stderr}`);
+            }
+            if (stdout) {
+                console.log(`FFmpeg stdout: ${stdout}`);
             }
             console.log('Subtitles burned successfully!');
             return outputPath;
@@ -185,27 +202,36 @@ class VideoProcessor {
             throw error;
         }
     }
-}
 
-async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName, dingAudioPath, vocalsAudioPath, subtitlesFile = null, image) {
+}
+async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName, vocalsAudioBuffer, subtitlesFile = null, imageBuffer) {
     const processor = new VideoProcessor();
 
     try {
-        const duration = await processor.getAudioDuration(vocalsAudioPath);
+        const tempAudioPath = await processor.createTempFile('vocals', vocalsAudioBuffer, '.mp3');
+        const duration = await processor.getAudioDuration(tempAudioPath);
         console.log(`Vocals duration: ${duration} seconds`);
 
         const trimmedPath = await processor.trimVideo(inputPath, duration);
+        console.log(`Trimmed video path: ${trimmedPath}`);
+
         const noAudioPath = await processor.removeAudio(trimmedPath);
+        console.log(`No audio video path: ${noAudioPath}`);
 
         let withSubtitlesPath = noAudioPath;
         if (subtitlesFile) {
-            withSubtitlesPath = await processor.createTempFile('with_subtitles');
-            await processor.burnSubtitles(noAudioPath, withSubtitlesPath, subtitlesFile);
+            withSubtitlesPath = await processor.burnSubtitles(noAudioPath, subtitlesFile);
+            console.log(`Video with subtitles path: ${withSubtitlesPath}`);
         }
 
-        // Use the passed-in image directly
-        const withOverlayPath = await processor.applyOverlay(withSubtitlesPath, image);
-        const withAudioPath = await processor.applyAudio(withOverlayPath, dingAudioPath, vocalsAudioPath, outputPath);
+        console.log('Applying overlay...');
+        const withOverlayPath = await processor.applyOverlay(withSubtitlesPath, imageBuffer);
+        console.log(`Video with overlay path: ${withOverlayPath}`);
+
+
+
+        const finalOutputPath = await processor.applyAudio(withOverlayPath, vocalsAudioBuffer, outputPath);
+        console.log(`Final output video path: ${finalOutputPath}`);
 
         const supabase = createClient(
             "https://dxtxbxkkvoslcrsxbfai.supabase.co",
@@ -213,7 +239,7 @@ async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName,
         );
 
         // Read the file
-        const fileBuffer = await fs.readFile(withAudioPath);
+        const fileBuffer = await fs.readFile(finalOutputPath);
 
         // Generate a unique filename
         const filename = `video_${Date.now()}.mp4`;
@@ -231,32 +257,30 @@ async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName,
     } finally {
         await processor.cleanup();
     }
-
-
 }
 
-// Example usage
+
 const inputVideo = path.join(__dirname, 'background_video.mp4');
 const outputVideo = path.join(__dirname, 'output_with_overlay_audio_and_subs.mp4');
-const dingAudioFile = path.join(__dirname, 'ding.mp3');
-const vocalsAudioFile = path.join(__dirname, 'stitched_audio.mp3');
 const subtitlesFile = path.join(__dirname, 'merged_timestamps.json');
 
-async function main(image) {
+async function main(imageBuffer, audioBuffer) {
     try {
-        return await processVideoWithOverlayAndAudio(inputVideo, outputVideo, "ER doctors of reddit, what's the worse thing you've ever seen in an operating room?", dingAudioFile, vocalsAudioFile, subtitlesFile, image);
+        return await processVideoWithOverlayAndAudio(inputVideo, outputVideo, "ER doctors of reddit, what's the worse thing you've ever seen in an operating room?", audioBuffer, subtitlesFile, imageBuffer);
     } catch (err) {
         console.error('Main process failed:', err);
     }
 }
-app.post('/', upload.single('image'), async function (req, res) {
+
+app.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'audio', maxCount: 1 }]), async function (req, res) {
     try {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No image file uploaded' });
+        if (!req.files['image'] || !req.files['audio']) {
+            return res.status(400).json({ error: 'Both image and audio files are required' });
         }
 
-        const image = req.file.buffer;
-        const response = await main(image);
+        const imageBuffer = req.files['image'][0].buffer;
+        const audioBuffer = req.files['audio'][0].buffer;
+        const response = await main(imageBuffer, audioBuffer);
 
         res.json(response);
     } catch (error) {
@@ -266,10 +290,12 @@ app.post('/', upload.single('image'), async function (req, res) {
 
 app.get('/', function (req, res) {
     res.send('Hello World')
-})
-
+});
 
 const PORT = process.env.PORT || 9000;
 
-app.listen(PORT)
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
 
+// const URL_PREFIX = "https://dxtxbxkkvoslcrsxbfai.supabase.co/storage/v1/object/public/" + fullPath
