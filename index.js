@@ -231,6 +231,8 @@ async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName,
     } finally {
         await processor.cleanup();
     }
+
+
 }
 
 // Example usage
@@ -242,35 +244,30 @@ const subtitlesFile = path.join(__dirname, 'merged_timestamps.json');
 
 async function main(image) {
     try {
-        await processVideoWithOverlayAndAudio(inputVideo, outputVideo, "ER doctors of reddit, what's the worse thing you've ever seen in an operating room?", dingAudioFile, vocalsAudioFile, subtitlesFile, image);
+        return await processVideoWithOverlayAndAudio(inputVideo, outputVideo, "ER doctors of reddit, what's the worse thing you've ever seen in an operating room?", dingAudioFile, vocalsAudioFile, subtitlesFile, image);
     } catch (err) {
         console.error('Main process failed:', err);
     }
 }
-
 app.post('/', upload.single('image'), async function (req, res) {
-    res.writeHead(200, {
-        'Content-Type': 'text/html',
-        'Transfer-Encoding': 'chunked'
-    });
-
-    res.write('Processing image...');
-
     try {
-        // if (!req.file) {
-        //     throw new Error('No image file uploaded');
-        // }
+        if (!req.file) {
+            return res.status(400).json({ error: 'No image file uploaded' });
+        }
 
         const image = req.file.buffer;
         const response = await main(image);
-        res.write('<br>Image processed successfully');
-        res.write('<br>Result: ' + JSON.stringify(response));
-    } catch (error) {
-        res.write('<br>Error occurred: ' + error.message);
-    }
 
-    res.end();
+        res.json(response);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
+
+app.get('/', function (req, res) {
+    res.send('Hello World')
+})
+
 
 const PORT = process.env.PORT || 9000;
 
