@@ -1,2 +1,5 @@
 [phases.setup]
 nixPkgs = ["...", "ffmpeg"]
+
+[phases.install]
+cmds = ['npm ci', 'npx playwright install']
