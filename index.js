@@ -242,9 +242,24 @@ async function main() {
     }
 }
 
-app.get('/', function (req, res) {
-    main();
-})
+app.get('/', async function (req, res) {
+    res.writeHead(200, {
+        'Content-Type': 'text/html',
+        'Transfer-Encoding': 'chunked'
+    });
+
+    res.write('Loading...');
+
+    try {
+        await main();
+        res.write('<br>Done');
+    } catch (error) {
+        res.write('<br>Error occurred');
+    }
+
+    res.end();
+});
+
 
 app.listen(5555)
 
