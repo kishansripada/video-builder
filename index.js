@@ -140,11 +140,8 @@ class VideoProcessor {
         return text.replace(/'/g, "'\\''").replace(/:/g, '\\:');
     }
 
-    async generateFilterComplex(subtitlesFile) {
-        const data = await fs.readFile(subtitlesFile, 'utf8');
-        const words = JSON.parse(data);
-
-        const subtitles = words.map(({ word, startTime, endTime }) => {
+    generateFilterComplex(subtitlesJson) {
+        const subtitles = subtitlesJson.map(({ word, startTime, endTime }) => {
             if (startTime !== undefined && endTime !== undefined) {
                 return `drawtext=fontfile='Bangers-Regular.ttf':text='${this.escapeText(word)}':fontsize=60:fontcolor=0xFAE54D:borderw=4:bordercolor=black:x=(w-tw)/2:y=(h-th)/2:enable='between(t,${startTime},${endTime})'`;
             }
@@ -154,10 +151,10 @@ class VideoProcessor {
         return subtitles.join(',');
     }
 
-    async burnSubtitles(inputPath, subtitlesFile) {
+    async burnSubtitles(inputPath, subtitlesJson) {
         try {
             const outputPath = await this.createTempFile('with_subtitles', null, '.mp4');
-            const filterComplex = await this.generateFilterComplex(subtitlesFile);
+            const filterComplex = this.generateFilterComplex(subtitlesJson);
             const ffmpegCommand = `ffmpeg -i "${inputPath}" -vf "${filterComplex}" -c:a copy "${outputPath}"`;
 
             const { stderr } = await execAsync(ffmpegCommand);
@@ -173,7 +170,7 @@ class VideoProcessor {
     }
 }
 
-async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName, vocalsAudioBuffer, subtitlesFile = null, imageBuffer) {
+async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName, vocalsAudioBuffer, subtitlesJson, imageBuffer) {
     const processor = new VideoProcessor();
 
     try {
@@ -185,8 +182,8 @@ async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName,
         const noAudioPath = await processor.removeAudio(trimmedPath);
 
         let withSubtitlesPath = noAudioPath;
-        if (subtitlesFile) {
-            withSubtitlesPath = await processor.burnSubtitles(noAudioPath, subtitlesFile);
+        if (subtitlesJson && subtitlesJson.length > 0) {
+            withSubtitlesPath = await processor.burnSubtitles(noAudioPath, subtitlesJson);
         }
 
         const withOverlayPath = await processor.applyOverlay(withSubtitlesPath, imageBuffer);
@@ -200,11 +197,13 @@ async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName,
         const fileBuffer = await fs.readFile(finalOutputPath);
         const filename = `video_${Date.now()}.mp4`;
 
-        return await supabase.storage
+        const { data, error } = await supabase.storage
             .from('videos')
             .upload(filename, fileBuffer, {
                 contentType: 'video/mp4'
             });
+        console.log(data, error)
+        return data
 
     } catch (error) {
         console.error('Video processing failed:', error);
@@ -216,11 +215,10 @@ async function processVideoWithOverlayAndAudio(inputPath, outputPath, storyName,
 
 const inputVideo = path.join(__dirname, 'background_video.mp4');
 const outputVideo = path.join(__dirname, 'output_with_overlay_audio_and_subs.mp4');
-const subtitlesFile = path.join(__dirname, 'merged_timestamps.json');
 
-async function main(imageBuffer, audioBuffer) {
+async function main(imageBuffer, audioBuffer, subtitlesJson) {
     try {
-        return await processVideoWithOverlayAndAudio(inputVideo, outputVideo, "ER doctors of reddit, what's the worse thing you've ever seen in an operating room?", audioBuffer, subtitlesFile, imageBuffer);
+        return await processVideoWithOverlayAndAudio(inputVideo, outputVideo, "ER doctors of reddit, what's the worse thing you've ever seen in an operating room?", audioBuffer, subtitlesJson, imageBuffer);
     } catch (err) {
         console.error('Main process failed:', err);
     }
@@ -228,13 +226,14 @@ async function main(imageBuffer, audioBuffer) {
 
 app.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'audio', maxCount: 1 }]), async function (req, res) {
     try {
-        if (!req.files['image'] || !req.files['audio']) {
-            return res.status(400).json({ error: 'Both image and audio files are required' });
+        if (!req.files['image'] || !req.files['audio'] || !req.body.subtitles) {
+            return res.status(400).json({ error: 'Image, audio, and subtitle JSON are required' });
         }
 
         const imageBuffer = req.files['image'][0].buffer;
         const audioBuffer = req.files['audio'][0].buffer;
-        const response = await main(imageBuffer, audioBuffer);
+        const subtitlesJson = JSON.parse(req.body.subtitles);
+        const response = await main(imageBuffer, audioBuffer, subtitlesJson);
 
         res.json(response);
     } catch (error) {
