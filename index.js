@@ -139,20 +139,29 @@ class VideoProcessor {
     escapeText(text) {
         return text.replace(/'/g, "'\\''").replace(/:/g, '\\:');
     }
-
     generateFilterComplex(subtitlesJson) {
         const subtitles = subtitlesJson.map(({ word, startTime, endTime }) => {
-            const newWord = this.escapeText(removeQuotes(word))
+            const newWord = this.escapeText(removeQuotes(word));
 
             if (startTime !== undefined && endTime !== undefined) {
-                return `drawtext=fontfile='Bangers-Regular.ttf':text='${newWord}':fontsize=60:fontcolor=0xFAE54D:borderw=4:bordercolor=black:x=(w-tw)/2:y=(h-th)/2:enable='between(t,${startTime},${endTime})'`;
+                const duration = endTime - startTime;
+                const bounceDuration = Math.min(0.2, duration / 2); // Bounce effect duration (max 0.3 seconds or half the subtitle duration)
+
+                return `drawtext=fontfile='Bangers-Regular.ttf':
+                    text='${newWord}':
+                    fontcolor=0xFFFFFF:
+                    borderw=4:
+                    bordercolor=black:
+                    x='if(lt(tw,w),min((w-tw)/2,w-tw-40),40)':
+                    y=(h-th)/2:
+                    fontsize='60*if(lt(t-${startTime},${bounceDuration}),1+0.2*sin((t-${startTime})/${bounceDuration}*PI),1)':
+                    enable='between(t,${startTime},${endTime})'`;
             }
             return null;
         }).filter(Boolean);
 
         return subtitles.join(',');
     }
-
     async burnSubtitles(inputPath, subtitlesJson) {
         try {
             const outputPath = await this.createTempFile('with_subtitles', null, '.mp4');
