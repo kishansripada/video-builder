@@ -1,22 +1,40 @@
 const express = require('express');
-const puppeteer = require('puppeteer-core');
-const chromium = require('@sparticuz/chromium');
+const puppeteer = require('puppeteer');
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs').promises;
+
+// Only require @sparticuz/chromium in Railway's production environment
+const isProduction = process.env.RAILWAY_ENVIRONMENT_NAME === 'production';
+const chromium = isProduction ? require('@sparticuz/chromium') : null;
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json());
+// Disable CORS
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    next();
+});
 
 async function generateScreenshot(storyName, cropTop, cropBottom) {
-    const browser = await puppeteer.launch({
-        args: chromium.args,
-        defaultViewport: chromium.defaultViewport,
-        executablePath: await chromium.executablePath(),
-        headless: chromium.headless,
-    });
+    let browser;
+    if (isProduction) {
+        // Railway production environment
+        browser = await puppeteer.launch({
+            args: chromium.args,
+            defaultViewport: chromium.defaultViewport,
+            executablePath: await chromium.executablePath(),
+            headless: chromium.headless,
+        });
+    } else {
+        // Local environment
+        browser = await puppeteer.launch({
+            headless: "new"
+        });
+    }
 
     const page = await browser.newPage();
     await page.setViewport({ width: 400, height: 300 });
@@ -66,4 +84,5 @@ app.post('/generate-screenshot', async (req, res) => {
 
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
+    console.log(`Environment: ${isProduction ? 'Production' : 'Development'}`);
 });
