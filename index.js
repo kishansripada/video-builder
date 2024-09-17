@@ -142,8 +142,10 @@ class VideoProcessor {
 
     generateFilterComplex(subtitlesJson) {
         const subtitles = subtitlesJson.map(({ word, startTime, endTime }) => {
+            const newWord = this.escapeText(removeQuotes(word))
+
             if (startTime !== undefined && endTime !== undefined) {
-                return `drawtext=fontfile='Bangers-Regular.ttf':text='${this.escapeText(word)}':fontsize=60:fontcolor=0xFAE54D:borderw=4:bordercolor=black:x=(w-tw)/2:y=(h-th)/2:enable='between(t,${startTime},${endTime})'`;
+                return `drawtext=fontfile='Bangers-Regular.ttf':text='${newWord}':fontsize=60:fontcolor=0xFAE54D:borderw=4:bordercolor=black:x=(w-tw)/2:y=(h-th)/2:enable='between(t,${startTime},${endTime})'`;
             }
             return null;
         }).filter(Boolean);
@@ -258,3 +260,7 @@ app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
 // const URL_PREFIX = "https://dxtxbxkkvoslcrsxbfai.supabase.co/storage/v1/object/public/" + fullPath
+
+function removeQuotes(input) {
+    return input.replace(/['"]/g, '');
+}
